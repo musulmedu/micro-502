@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from lib.simple_pid import PID
 from scipy.spatial.transform import Rotation as R
 
+
+
 class quadrotor_controller():
     def __init__(self, exp_num):
         # Exercise 1: Choose what to tune ["vel_z", "pos_z", "vel_xy", "pos_xy"]
@@ -35,9 +37,9 @@ class quadrotor_controller():
             # KF gains and limits
             
             gains = {
-                        "P_pos_z": 5.0,     "I_pos_z": 0.0,     "D_pos_z": 2.5,
-                        "P_pos_xy": 2.0,    "I_pos_xy": 0.0,    "D_pos_xy": 0.0,
-                        "P_vel_z": 7.0,     "I_vel_z": 0.1,     "D_vel_z": 2.0,
+                        "P_pos_z": 2.0,     "I_pos_z": 0.0,     "D_pos_z": 2.5,
+                        "P_pos_xy": 1.0,    "I_pos_xy": 0.0,    "D_pos_xy": 0.0,
+                        "P_vel_z": 2.0,     "I_vel_z": 0.1,     "D_vel_z": 0.0,
                         "P_vel_xy": 0.5,    "I_vel_xy": 0.0,    "D_vel_xy": 0.015,
                         "P_att_rp": 8.0,   "I_att_rp": 0.0,    "D_att_rp": 0.9,
                         "P_att_y": 2.0,     "I_att_y": 0.0,     "D_att_y": 1.0,
@@ -101,7 +103,7 @@ class quadrotor_controller():
         self.pid_rate_yaw.output_limits = (None,None)
 
         self.init_pos = None
-
+    
 
     def setpoint_to_pwm(self, dt, setpoint, sensor_data):
         if self.tuning_level != "off":
@@ -110,16 +112,35 @@ class quadrotor_controller():
             setpoint = self.init_pos + np.array([0,0,0.75,0]) #Hover above initial position
 
         ### START EXERCISE 1 implementation part ###
+        self.pid_pos_x.setpoint = setpoint[0]
+        self.pid_pos_y.setpoint = setpoint[1]
+        self.pid_pos_z.setpoint = setpoint[2]
+        out_pos_x = self.pid_pos_x.call(sensor_data['x_global'],dt)
+        out_pos_y = self.pid_pos_y.call(sensor_data['y_global'],dt)
+        out_pos_z = self.pid_pos_z.call(sensor_data['z_global'],dt)
+
+        rot = R.from_euler('zyx', [sensor_data['yaw'],sensor_data['pitch'],sensor_data['roll']], degrees=False)
+        output_pos = np.array([out_pos_x,out_pos_y,out_pos_z])
+        body_output_pos = rot.inv().apply(output_pos)
+        self.pid_vel_x.setpoint = body_output_pos[0]
+        self.pid_vel_y.setpoint = body_output_pos[1]
+        self.pid_vel_z.setpoint = body_output_pos[2]
+
+        yaw_setpoint = np.arctan2(sensor_data["v_left"], sensor_data["v_forward"])
+        out_speed_x = self.pid_vel_x.call(sensor_data["v_forward"],dt)
+        out_speed_y = self.pid_vel_y.call(sensor_data["v_left"],dt)
+        out_speed_z = self.pid_vel_z.call(sensor_data["v_up"],dt)
+
 
         # return self.acceleration_and_yaw_to_pwm(dt, [acc_x_setpoint, acc_y_setpoint, acc_z_setpoint], yaw_setpoint, sensor_data)
-        return self.acceleration_and_yaw_to_pwm(dt, [0, 0, 0], 0, sensor_data) #replace this with the line above
+        return self.acceleration_and_yaw_to_pwm(dt, [out_speed_x, out_speed_y, out_speed_z], yaw_setpoint, sensor_data) #replace this with the line above
     
         ### END EXERCISE 1 implementation part ###
     
     def keys_to_pwm(self, dt, keys, sensor_data):
         # keys = acc_x, acc_y, altitude, yaw
         vel_z_setpoint = keys[2]
-        self.pid_vel_z.set_setpoint(vel_z_setpoint)
+        self.pid_vel_z.set_setpoint(vel_z_setpoint) #ghf
         acc_z_setpoint = self.pid_vel_z.call(sensor_data["v_z"],dt=dt)
         yaw = sensor_data["yaw"] + keys[3]
         
