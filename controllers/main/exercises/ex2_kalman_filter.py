@@ -63,14 +63,25 @@ class kalman_filter():
 
         # YOUR CODE HERE
         # -----------------------------------
-        self.X_opt = ...
-        self.P_opt = ...
+        self.X_opt = np.zeros((9,1))
+        self.P_opt = np.identity((9)) * 1000
 
-        self.H_GPS = ...
-        self.H_ACCEL = ...
+        self.H_GPS = np.array([[1, 0, 0, 0, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 1, 0, 0, 0, 0, 0],
+                               [0, 0, 0, 0, 0, 0, 1, 0, 0]])
+        
+        self.H_ACCEL = np.array([[0, 0, 1, 0, 0, 0, 0, 0, 0],
+                                 [0, 0, 0, 0, 0, 1, 0, 0, 0],
+                                 [0, 0, 0, 0, 0, 0, 0, 0, 1]])
 
-        self.R_GPS = ...
-        self.R_ACCEL = ...
+        self.R_GPS = np.array([[noise_std_GPS**2, 0, 0],
+                               [0, noise_std_GPS**2, 0],
+                               [0, 0,noise_std_GPS**2]])
+        
+        self.R_ACCEL = np.array([[noise_std_ACCEL**2, 0, 0],
+                               [0, noise_std_ACCEL**2, 0],
+                               [0, 0,noise_std_ACCEL**2]])
+        
 
     def KF_state_propagation(self, dt):
         # Function that propagates the last fused state over a time-interval dt
@@ -87,11 +98,14 @@ class kalman_filter():
         # -----------------------------------
 
         # Define the state transition matrix A_trans (n_states x n_states)
-        A_trans = ...
-
+        A = np.array([[1, dt, 0.5 * dt**2],
+                      [0, 1, dt],
+                      [0, 0,1]])
+        
+        A_trans = np.kron(np.eye(3), A)
         # Calculate the propagated state (X_pred) and the propagated covariance (P_pred) using the last fused state (self.X_opt) and covariance (self.P_opt)
-        X_pred = ... # X_pred must be 2D array of shape (n_states, 1) Hint: Check the shape, if it does not match in your implementation use the .reshape(-1, 1) attribute
-        P_pred = ...
+        X_pred = A_trans @ self.X_opt # X_pred must be 2D array of shape (n_states, 1) Hint: Check the shape, if it does not match in your implementation use the .reshape(-1, 1) attribute
+        P_pred = A_trans @ self.P_opt @ A_trans.transpose + Q_trans
 
         return X_pred, P_pred
 
@@ -110,11 +124,12 @@ class kalman_filter():
         # YOUR CODE HERE
         # -----------------------------------
         # Calculate the Kalman Gain (K)
-        K = ...
+        K = P_pred @ H.t / ((H @ P_pred @ H.t) + R)
+
 
         # Use the KF update turle to obtain the optimal state estimate (self.X_opt) and optimal covariance (self.P_opt)
-        self.X_opt = ...
-        self.P_opt = ...
+        self.X_opt = X_pred + K @(Z - H @ H @ X_pred)
+        self.P_opt = (np.identity((3,3)) - K @ H) @ P_pred
 
         return self.X_opt, self.P_opt
 
@@ -137,11 +152,19 @@ class kalman_filter():
         # -----------------------------------
 
         # Propagate the state to the current timestep
-        X_prop, P_prop = ...
+        X_prop, P_prop = self.KF_state_propagation(dt_last_measurement)
 
         # Perform the sensor fusion dependant on measurement case and the propagated step (sensor_state_flag cases 0,1,2,3)
-
         # # Example implementation for case sensor_state_flag = 3
+        if sensor_state_flag == 0:
+            X_est, P_est =  X_prop, P_prop
+
+        if sensor_state_flag == 1:
+            X_est, P_est = self.KF_sensor_fusion(X_opt_gps, P_opt_gps, self.H_ACCEL, self.R_ACCEL, measured_state_accel) #Fuse the fused GPS state (X_opt_gps) with the accelerometer measurement at the same timestep
+        
+        if sensor_state_flag == 2:
+            X_opt_gps, P_opt_gps = self.KF_sensor_fusion(X_prop, P_prop, self.H_GPS, self.R_GPS, measured_state_gps) #Fuse the GPS measurement with the propagated state
+        
         if sensor_state_flag == 3:
             X_opt_gps, P_opt_gps = self.KF_sensor_fusion(X_prop, P_prop, self.H_GPS, self.R_GPS, measured_state_gps) #Fuse the GPS measurement with the propagated state
             X_est, P_est = self.KF_sensor_fusion(X_opt_gps, P_opt_gps, self.H_ACCEL, self.R_ACCEL, measured_state_accel) #Fuse the fused GPS state (X_opt_gps) with the accelerometer measurement at the same timestep
